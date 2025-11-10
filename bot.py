@@ -241,6 +241,44 @@ def show_my_score(message, say):
     say(f"<@{user_id}> Your current score: *{score:+d}* points")
 
 
+@app.message(re.compile(r"^!adjust\s+<@([A-Z0-9]+)>\s+([-+]?\d+)", re.IGNORECASE))
+def adjust_score(message, say, client):
+    """Admin command to manually adjust someone's score"""
+    if message.get('channel') != SPOTTED_CHANNEL:
+        return
+    
+    admin_user = message.get('user')
+    match = re.search(r'^!adjust\s+<@([A-Z0-9]+)>\s+([-+]?\d+)', message.get('text', ''), re.IGNORECASE)
+    
+    if not match:
+        return
+    
+    target_user = match.group(1)
+    adjustment = int(match.group(2))
+    
+    try:
+        # Get user names
+        target_info = client.users_info(user=target_user)
+        target_name = target_info['user']['real_name'] or target_info['user']['name']
+        
+        admin_info = client.users_info(user=admin_user)
+        admin_name = admin_info['user']['real_name'] or admin_info['user']['name']
+        
+        # Update score
+        db.add_point(target_user, adjustment, target_name)
+        new_score = db.get_score(target_user)
+        
+        say(
+            f"⚖️ *Score Adjusted*\n"
+            f"<@{target_user}>'s score adjusted by {adjustment:+d} by {admin_name}\n"
+            f"New score: {new_score:+d} points"
+        )
+        print(f"✅ {admin_name} adjusted {target_name}'s score by {adjustment}")
+    except Exception as e:
+        say(f"❌ Error adjusting score: {e}")
+        print(f"Error adjusting score: {e}")
+
+
 @app.message(re.compile(r"^!help", re.IGNORECASE))
 def show_help(message, say):
     """Show help message"""
@@ -260,6 +298,7 @@ Post a photo and @mention people in the photo. You get +1 point per person tagge
 *Commands:*
 • `!leaderboard` - View the full leaderboard
 • `!myscore` - Check your current score
+• `!adjust @user +5` - Manually adjust someone's score (e.g., to fix mistakes)
 • `!help` - Show this help message
 
 *Rules:*
@@ -267,6 +306,11 @@ Post a photo and @mention people in the photo. You get +1 point per person tagge
 • Can tag multiple people in one message (all assumed to be in the photo(s))
 • Can't spot yourself
 • Each tagged person counts as a spot
+
+*To fix incorrect spots:*
+Use `!adjust` to add or remove points. Examples:
+• `!adjust @john +1` - Give John 1 point back
+• `!adjust @sarah -2` - Remove 2 points from Sarah
 """
     say(help_text)
 

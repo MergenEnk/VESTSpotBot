@@ -16,7 +16,23 @@ A Slack bot that tracks when users get "spotted" in photos and maintains a compe
 
 - `!leaderboard` - View the full leaderboard
 - `!myscore` - Check your current score
+- `!adjust @user +/-points` - Manually adjust someone's score (to fix mistakes)
 - `!help` - Show help message
+
+### Fixing Mistakes
+
+If someone was spotted incorrectly, use the `!adjust` command:
+
+```
+!adjust @john +1     (Give John 1 point back)
+!adjust @sarah -2    (Remove 2 points from Sarah)
+```
+
+Example: If John was incorrectly spotted (John -1, Spotter +1), fix it with:
+```
+!adjust @john +1
+!adjust @spotter -1
+```
 
 ## Setup Instructions
 
