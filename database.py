@@ -14,6 +14,7 @@ class Database:
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS scores (
                     user_id TEXT PRIMARY KEY,
+                    user_name TEXT,
                     score INTEGER DEFAULT 0
                 )
             ''')
@@ -27,22 +28,28 @@ class Database:
             result = cursor.fetchone()
             return result[0] if result else 0
     
-    def add_point(self, user_id: str, points: int):
+    def add_point(self, user_id: str, points: int, user_name: str = None):
         """Add points to a user's score (can be negative)"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO scores (user_id, score) VALUES (?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET score = score + ?
-            ''', (user_id, points, points))
+            if user_name:
+                cursor.execute('''
+                    INSERT INTO scores (user_id, user_name, score) VALUES (?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET score = score + ?, user_name = ?
+                ''', (user_id, user_name, points, points, user_name))
+            else:
+                cursor.execute('''
+                    INSERT INTO scores (user_id, score) VALUES (?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET score = score + ?
+                ''', (user_id, points, points))
             conn.commit()
     
-    def get_leaderboard(self, limit: int = 10) -> List[Tuple[str, int]]:
-        """Get the top scores, ordered by score descending"""
+    def get_leaderboard(self, limit: int = 10) -> List[Tuple[str, str, int]]:
+        """Get the top scores, ordered by score descending. Returns (user_id, user_name, score)"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT user_id, score FROM scores 
+                SELECT user_id, user_name, score FROM scores 
                 ORDER BY score DESC 
                 LIMIT ?
             ''', (limit,))

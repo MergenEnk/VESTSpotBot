@@ -84,28 +84,40 @@ def handle_file_shared(event, client, say):
                             print("❌ No valid mentions")
                             return
                         
-                        # Process spots
-                        for spotted_id in mentioned_users:
-                            db.add_point(user_id, 1)
-                            db.add_point(spotted_id, -1)
+                        # Process all spots together
+                        try:
+                            spotter_info = client.users_info(user=user_id)
+                            spotter_name = spotter_info['user']['real_name'] or spotter_info['user']['name']
                             
-                            try:
-                                spotter_info = client.users_info(user=user_id)
-                                spotted_info = client.users_info(user=spotted_id)
-                                spotter_name = spotter_info['user']['real_name'] or spotter_info['user']['name']
-                                spotted_name = spotted_info['user']['real_name'] or spotted_info['user']['name']
-                                
+                            spotted_names = []
+                            for spotted_id in mentioned_users:
+                                try:
+                                    spotted_info = client.users_info(user=spotted_id)
+                                    spotted_name = spotted_info['user']['real_name'] or spotted_info['user']['name']
+                                    
+                                    # Update scores with names
+                                    db.add_point(user_id, 1, spotter_name)
+                                    db.add_point(spotted_id, -1, spotted_name)
+                                    
+                                    spotted_names.append(f"<@{spotted_id}>")
+                                    print(f"✅ Spotted {spotted_id}!")
+                                except Exception as e:
+                                    print(f"Error processing {spotted_id}: {e}")
+                            
+                            if spotted_names:
                                 client.reactions_add(channel=channel_id, timestamp=msg['ts'], name='eyes')
                                 
+                                spotted_list = ", ".join(spotted_names)
+                                points_earned = len(spotted_names)
+                                
                                 say(
-                                    f"📸 *SPOTTED!* <@{spotted_id}> was caught by <@{user_id}>!\n"
-                                    f"Score update: {spotter_name} +1 | {spotted_name} -1",
+                                    f"📸 *SPOTTED!* {spotted_list} caught by <@{user_id}>!\n"
+                                    f"Score update: {spotter_name} +{points_earned} | Tagged users -{len(spotted_names)}",
                                     thread_ts=msg['ts'],
                                     channel=channel_id
                                 )
-                                print(f"✅ Spotted {spotted_id}!")
-                            except Exception as e:
-                                print(f"Error processing spot: {e}")
+                        except Exception as e:
+                            print(f"Error processing spots: {e}")
                         return
     except Exception as e:
         print(f"Error handling file_shared: {e}")
@@ -153,19 +165,27 @@ def handle_message(event, say, client):
         print("❌ No valid mentions (or only self-mention)")
         return
     
-    # Process each spotted user
-    for spotted_id in mentioned_users:
-        # Update scores
-        db.add_point(spotter_id, 1)  # Spotter gets +1
-        db.add_point(spotted_id, -1)  # Spotted gets -1
+    # Process all spotted users together
+    try:
+        spotter_info = client.users_info(user=spotter_id)
+        spotter_name = spotter_info['user']['real_name'] or spotter_info['user']['name']
         
-        # Get user names
-        try:
-            spotter_info = client.users_info(user=spotter_id)
-            spotted_info = client.users_info(user=spotted_id)
-            spotter_name = spotter_info['user']['real_name'] or spotter_info['user']['name']
-            spotted_name = spotted_info['user']['real_name'] or spotted_info['user']['name']
-            
+        spotted_names = []
+        for spotted_id in mentioned_users:
+            try:
+                spotted_info = client.users_info(user=spotted_id)
+                spotted_name = spotted_info['user']['real_name'] or spotted_info['user']['name']
+                
+                # Update scores with names
+                db.add_point(spotter_id, 1, spotter_name)
+                db.add_point(spotted_id, -1, spotted_name)
+                
+                spotted_names.append(f"<@{spotted_id}>")
+                print(f"✅ Spotted {spotted_id}!")
+            except Exception as e:
+                print(f"Error processing {spotted_id}: {e}")
+        
+        if spotted_names:
             # React to the message
             client.reactions_add(
                 channel=event['channel'],
@@ -173,14 +193,17 @@ def handle_message(event, say, client):
                 name='eyes'
             )
             
+            spotted_list = ", ".join(spotted_names)
+            points_earned = len(spotted_names)
+            
             # Post confirmation
             say(
-                f"📸 *SPOTTED!* <@{spotted_id}> was caught by <@{spotter_id}>!\n"
-                f"Score update: {spotter_name} +1 | {spotted_name} -1",
+                f"📸 *SPOTTED!* {spotted_list} caught by <@{spotter_id}>!\n"
+                f"Score update: {spotter_name} +{points_earned} | Tagged users -{len(spotted_names)}",
                 thread_ts=event['ts']
             )
-        except Exception as e:
-            print(f"Error processing spot: {e}")
+    except Exception as e:
+        print(f"Error processing spots: {e}")
 
 
 @app.message(re.compile(r"^!leaderboard", re.IGNORECASE))
@@ -198,15 +221,10 @@ def show_leaderboard(message, say, client):
     # Build leaderboard message
     leaderboard_text = "*🏆 SPOTTED LEADERBOARD 🏆*\n\n"
     
-    for i, (user_id, score) in enumerate(scores, 1):
-        try:
-            user_info = client.users_info(user=user_id)
-            user_name = user_info['user']['real_name'] or user_info['user']['name']
-        except:
-            user_name = f"<@{user_id}>"
-        
+    for i, (user_id, user_name, score) in enumerate(scores, 1):
+        display_name = user_name or f"<@{user_id}>"
         emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "📌"
-        leaderboard_text += f"{emoji} *{i}.* {user_name}: {score:+d} points\n"
+        leaderboard_text += f"{emoji} *{i}.* {display_name}: {score:+d} points\n"
     
     say(leaderboard_text)
 
@@ -233,7 +251,11 @@ def show_help(message, say):
 *📸 SPOTTED BOT HELP 📸*
 
 *How to spot someone:*
-Post a photo and @mention the person in the photo. You'll get +1 point and they'll get -1 point!
+Post a photo and @mention people in the photo. You get +1 point per person tagged, they each get -1 point!
+
+*Examples:*
+• "Look who I found! @john @sarah" (You: +2, John: -1, Sarah: -1)
+• "Caught @mike slacking" (You: +1, Mike: -1)
 
 *Commands:*
 • `!leaderboard` - View the full leaderboard
@@ -241,10 +263,10 @@ Post a photo and @mention the person in the photo. You'll get +1 point and they'
 • `!help` - Show this help message
 
 *Rules:*
-• Must include a photo/image in your message
-• Must @mention the person you're spotting
+• Must include at least one photo/image
+• Can tag multiple people in one message (all assumed to be in the photo(s))
 • Can't spot yourself
-• Each mention in a photo message counts as a separate spot
+• Each tagged person counts as a spot
 """
     say(help_text)
 

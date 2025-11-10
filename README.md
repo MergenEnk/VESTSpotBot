@@ -5,10 +5,12 @@ A Slack bot that tracks when users get "spotted" in photos and maintains a compe
 ## How It Works
 
 1. **Post a photo** in the designated channel
-2. **@mention the person** in the photo (before or after the image)
+2. **@mention people** in the photo (can tag multiple people)
 3. **Scoring:**
-   - Person who posted the photo: **+1 point**
-   - Person who got spotted: **-1 point**
+   - Person who posted: **+1 point per person tagged**
+   - Each person tagged: **-1 point**
+   
+**Example:** Post a photo and tag @john @sarah → You get +2, John gets -1, Sarah gets -1
 
 ## Commands
 
@@ -95,9 +97,9 @@ In Slack, invite the bot to your channel:
 /invite @SpottedBot
 ```
 
-## Usage Example
+## Usage Examples
 
-**User posts:**
+**Single person:**
 ```
 [image.jpg]
 Caught @john slacking off! 😂
@@ -105,13 +107,50 @@ Caught @john slacking off! 😂
 
 **Bot responds:**
 ```
-📸 SPOTTED! @john was caught by @sarah!
-Score update: sarah +1 | john -1
+📸 SPOTTED! @john caught by @sarah!
+Score update: sarah +1 | Tagged users -1
+```
+
+**Multiple people:**
+```
+[image.jpg]
+Look who showed up! @john @mike @lisa
+```
+
+**Bot responds:**
+```
+📸 SPOTTED! @john, @mike, @lisa caught by @sarah!
+Score update: sarah +3 | Tagged users -3
 ```
 
 ## Database
 
 Scores are stored in `spotted.db` (SQLite). To reset all scores, delete this file or use the `reset_scores()` method in the Database class.
+
+## API for Webapp Integration
+
+Want to visualize the leaderboard in a separate webapp? The bot exposes REST API endpoints!
+
+**Run with API:**
+```bash
+python main.py  # Runs bot + API together
+```
+
+**Endpoints:**
+- `GET /api/leaderboard` - Full leaderboard
+- `GET /api/score/<user_id>` - Specific user's score
+- `GET /api/stats` - Overall statistics
+
+**Example:** See `example_webapp.html` for a beautiful working demo!
+
+**In your webapp** (separate repo), just fetch:
+```javascript
+fetch('https://your-bot.railway.app/api/leaderboard')
+  .then(res => res.json())
+  .then(data => console.log(data.leaderboard));
+```
+
+See `API_GUIDE.md` for full integration details.
 
 ## Cloud Deployment (Run 24/7)
 
@@ -198,8 +237,10 @@ railway variables set SPOTTED_CHANNEL_ID=C...
 
 ## Rules
 
-- You can't spot yourself (mentions of the poster are ignored)
-- Multiple mentions in one photo = multiple spots
+- You can't spot yourself (self-mentions are ignored)
+- Can tag multiple people in one message - all assumed to be in the photo(s)
+- Spotter gets +1 per person tagged
+- Each tagged person gets -1
 - Only works in the designated channel
-- Must include both a photo AND a mention
+- Must include at least one photo AND at least one mention
 

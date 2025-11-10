@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spotted Leaderboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .stat-card h3 {
+            color: #667eea;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        
+        .stat-card .value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .leaderboard {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .leaderboard h2 {
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .leaderboard-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            transition: transform 0.2s;
+        }
+        
+        .leaderboard-item:hover {
+            transform: translateX(5px);
+        }
+        
+        .rank {
+            font-size: 1.5em;
+            font-weight: bold;
+            width: 50px;
+            color: #667eea;
+        }
+        
+        .rank.top-1 { color: #FFD700; }
+        .rank.top-2 { color: #C0C0C0; }
+        .rank.top-3 { color: #CD7F32; }
+        
+        .user-info {
+            flex: 1;
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .score {
+            font-size: 1.3em;
+            font-weight: bold;
+            padding: 5px 15px;
+            border-radius: 20px;
+        }
+        
+        .score.positive {
+            color: #10b981;
+            background: #d1fae5;
+        }
+        
+        .score.negative {
+            color: #ef4444;
+            background: #fee2e2;
+        }
+        
+        .loading {
+            text-align: center;
+            color: white;
+            font-size: 1.5em;
+            padding: 50px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📸 SPOTTED!</h1>
+            <p>Leaderboard</p>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <h3>Total Players</h3>
+                <div class="value" id="totalPlayers">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Spots</h3>
+                <div class="value" id="totalSpots">-</div>
+            </div>
+        </div>
+        
+        <div class="leaderboard">
+            <h2>🏆 Leaderboard</h2>
+            <div id="leaderboardContent">
+                <div class="loading">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // CHANGE THIS TO YOUR DEPLOYED BOT URL
+        const API_URL = 'http://localhost:5000/api';
+        // When deployed: const API_URL = 'https://your-bot.railway.app/api';
+        
+        async function fetchLeaderboard() {
+            console.log('Fetching leaderboard from:', API_URL);
+            
+            try {
+                const [statsRes, leaderboardRes] = await Promise.all([
+                    fetch(`${API_URL}/stats`),
+                    fetch(`${API_URL}/leaderboard`)
+                ]);
+                
+                console.log('Stats response:', statsRes.status);
+                console.log('Leaderboard response:', leaderboardRes.status);
+                
+                if (!statsRes.ok || !leaderboardRes.ok) {
+                    throw new Error(`API returned error: Stats ${statsRes.status}, Leaderboard ${leaderboardRes.status}`);
+                }
+                
+                const stats = await statsRes.json();
+                const data = await leaderboardRes.json();
+                
+                console.log('Stats data:', stats);
+                console.log('Leaderboard data:', data);
+                
+                document.getElementById('totalPlayers').textContent = stats.total_players;
+                document.getElementById('totalSpots').textContent = stats.total_spots;
+                
+                const container = document.getElementById('leaderboardContent');
+                
+                if (data.leaderboard.length === 0) {
+                    container.innerHTML = '<p style="text-align: center; color: #999;">No spots yet! Post a photo with @mention to get started.</p>';
+                    return;
+                }
+                
+                container.innerHTML = data.leaderboard.map((item, index) => {
+                    const rank = index + 1;
+                    const rankClass = rank === 1 ? 'top-1' : rank === 2 ? 'top-2' : rank === 3 ? 'top-3' : '';
+                    const emoji = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '📌';
+                    const scoreClass = item.score >= 0 ? 'positive' : 'negative';
+                    
+                    return `
+                        <div class="leaderboard-item">
+                            <div class="rank ${rankClass}">${emoji}</div>
+                            <div class="user-info">${item.user_name}</div>
+                            <div class="score ${scoreClass}">${item.score > 0 ? '+' : ''}${item.score}</div>
+                        </div>
+                    `;
+                }).join('');
+                
+            } catch (error) {
+                console.error('Error fetching leaderboard:', error);
+                document.getElementById('leaderboardContent').innerHTML = 
+                    `<div style="text-align: center; padding: 20px;">
+                        <p style="color: #ef4444; margin-bottom: 10px;">❌ Cannot connect to API</p>
+                        <p style="color: #666; font-size: 0.9em;">Make sure you're running: <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">python main.py</code></p>
+                        <p style="color: #666; font-size: 0.9em; margin-top: 5px;">Check console for details (F12)</p>
+                    </div>`;
+            }
+        }
+        
+        fetchLeaderboard();
+        setInterval(fetchLeaderboard, 30000); // Refresh every 30s
+    </script>
+</body>
+</html>
+
