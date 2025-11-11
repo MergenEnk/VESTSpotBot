@@ -39,10 +39,10 @@ def run_api():
 if __name__ == "__main__":
     print("🚀 Starting Spotted Leaderboard System...\n")
     
-    # Start API in separate thread
-    api_thread = Thread(target=run_api, daemon=True)
-    api_thread.start()
+    # Start bot in separate thread
+    bot_thread = Thread(target=run_bot, daemon=True)
+    bot_thread.start()
     
-    # Run bot in main thread
-    run_bot()
+    # Run API in main thread (so Railway can detect it)
+    run_api()
 

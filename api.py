@@ -7,6 +7,12 @@ CORS(app)
 db = Database()
 
 
+@app.route('/', methods=['GET'])
+def health_check():
+    """Health check for Railway"""
+    return jsonify({'status': 'ok', 'message': 'Spotted Leaderboard API is running'})
+
+
 @app.route('/api/leaderboard', methods=['GET'])
 def get_leaderboard():
     """Get full leaderboard"""
