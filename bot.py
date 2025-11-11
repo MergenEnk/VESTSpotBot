@@ -1,6 +1,7 @@
 import os
 import re
 import ssl
+from collections import deque
 from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -19,8 +20,8 @@ db = Database()
 # Channel where the bot operates
 SPOTTED_CHANNEL = os.environ.get("SPOTTED_CHANNEL_ID")
 
-# Track processed messages to avoid duplicate processing
-processed_messages = set()
+# Track processed messages to avoid duplicate processing (keeps last 1000 messages)
+processed_messages = deque(maxlen=1000)
 
 
 def extract_mentions(text):
@@ -103,7 +104,7 @@ def handle_file_shared(event, client, say):
                             return
                         
                         # Mark message as processed
-                        processed_messages.add(msg_ts)
+                        processed_messages.append(msg_ts)
                         
                         # Process all spots together
                         try:
@@ -144,17 +145,23 @@ def handle_file_shared(event, client, say):
         print(f"Error handling file_shared: {e}")
 
 
-# TEMPORARILY DISABLED FOR TESTING
-# @app.event("message")
-def handle_message_disabled(event, say, client):
+@app.event("message")
+def handle_message(event, say, client):
     """Handle messages in the spotted channel"""
     
     # Only process messages in the designated channel
     if event.get('channel') != SPOTTED_CHANNEL:
         return
     
-    # Ignore bot messages and message edits
-    if event.get('subtype') in ['bot_message', 'message_changed']:
+    # Ignore bot messages, message edits, and file_share subtype
+    # file_share is handled by file_shared event handler to avoid duplicates
+    if event.get('subtype') in ['bot_message', 'message_changed', 'file_share']:
+        return
+    
+    # Check if message already processed (avoid race conditions)
+    msg_ts = event.get('ts')
+    if msg_ts and msg_ts in processed_messages:
+        print(f"⏭️  Message {msg_ts} already processed, skipping")
         return
     
     # ONLY process messages with images (let command handlers deal with text-only messages)
@@ -183,6 +190,9 @@ def handle_message_disabled(event, say, client):
     if not mentioned_users:
         print("❌ No valid mentions (or only self-mention)")
         return
+    
+    # Mark message as processed to avoid duplicates
+    processed_messages.append(msg_ts)
     
     # Process all spotted users together
     try:
@@ -223,118 +233,6 @@ def handle_message_disabled(event, say, client):
             )
     except Exception as e:
         print(f"Error processing spots: {e}")
-
-
-@app.message(re.compile(r"^!leaderboard", re.IGNORECASE))
-def show_leaderboard(message, say, client):
-    """Show the leaderboard when someone types !leaderboard"""
-    print(f"🏆 !leaderboard command received from {message.get('user')}")
-    if message.get('channel') != SPOTTED_CHANNEL:
-        print(f"❌ Wrong channel for !leaderboard: {message.get('channel')}")
-        return
-    
-    scores = db.get_leaderboard()
-    
-    if not scores:
-        say("No one has been spotted yet! 📸")
-        return
-    
-    # Build leaderboard message
-    leaderboard_text = "*🏆 SPOTTED LEADERBOARD 🏆*\n\n"
-    
-    for i, (user_id, user_name, score) in enumerate(scores, 1):
-        display_name = user_name or f"<@{user_id}>"
-        emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "📌"
-        leaderboard_text += f"{emoji} *{i}.* {display_name}: {score:+d} points\n"
-    
-    say(leaderboard_text)
-
-
-@app.message(re.compile(r"^!myscore", re.IGNORECASE))
-def show_my_score(message, say):
-    """Show the user's current score"""
-    print(f"📊 !myscore command received from {message.get('user')}")
-    if message.get('channel') != SPOTTED_CHANNEL:
-        print(f"❌ Wrong channel for !myscore: {message.get('channel')}")
-        return
-    
-    user_id = message.get('user')
-    score = db.get_score(user_id)
-    
-    say(f"<@{user_id}> Your current score: *{score:+d}* points")
-
-
-@app.message(re.compile(r"^!adjust\s+<@([A-Z0-9]+)>\s+([-+]?\d+)", re.IGNORECASE))
-def adjust_score(message, say, client):
-    """Admin command to manually adjust someone's score"""
-    print(f"⚖️ !adjust command received: {message.get('text')}")
-    if message.get('channel') != SPOTTED_CHANNEL:
-        print(f"❌ Wrong channel for !adjust: {message.get('channel')}")
-        return
-    
-    admin_user = message.get('user')
-    match = re.search(r'^!adjust\s+<@([A-Z0-9]+)>\s+([-+]?\d+)', message.get('text', ''), re.IGNORECASE)
-    
-    if not match:
-        return
-    
-    target_user = match.group(1)
-    adjustment = int(match.group(2))
-    
-    try:
-        # Get user names
-        target_info = client.users_info(user=target_user)
-        target_name = target_info['user']['real_name'] or target_info['user']['name']
-        
-        admin_info = client.users_info(user=admin_user)
-        admin_name = admin_info['user']['real_name'] or admin_info['user']['name']
-        
-        # Update score
-        db.add_point(target_user, adjustment, target_name)
-        new_score = db.get_score(target_user)
-        
-        say(
-            f"⚖️ *Score Adjusted*\n"
-            f"<@{target_user}>'s score adjusted by {adjustment:+d} by {admin_name}\n"
-            f"New score: {new_score:+d} points"
-        )
-        print(f"✅ {admin_name} adjusted {target_name}'s score by {adjustment}")
-    except Exception as e:
-        say(f"❌ Error adjusting score: {e}")
-        print(f"Error adjusting score: {e}")
-
-
-@app.message(re.compile(r"^!help", re.IGNORECASE))
-def show_help(message, say):
-    """Show help message"""
-    print(f"🆘 !help command received from {message.get('user')}")
-    if message.get('channel') != SPOTTED_CHANNEL:
-        print(f"❌ Wrong channel for !help: {message.get('channel')}")
-        return
-    
-    help_text = """
-*📸 SPOTTED BOT HELP 📸*
-
-*How to spot someone:*
-Post a photo and @mention people in the photo. You get +1 point per person tagged, they each get -1 point!
-
-*Examples:*
-• "Look who I found! @john @sarah" (You: +2, John: -1, Sarah: -1)
-• "Caught @mike slacking" (You: +1, Mike: -1)
-
-*Commands:*
-• `!leaderboard` - View the full leaderboard
-• `!myscore` - Check your current score
-• `!help` - Show this help message
-
-*Rules:*
-• Must include at least one photo/image
-• Can tag multiple people in one message (all assumed to be in the photo(s))
-• Can't spot yourself
-• Each tagged person counts as a spot
-
-"""
-    say(help_text)
 
 
 if __name__ == "__main__":
