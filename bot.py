@@ -19,6 +19,9 @@ db = Database()
 # Channel where the bot operates
 SPOTTED_CHANNEL = os.environ.get("SPOTTED_CHANNEL_ID")
 
+# Track processed messages to avoid duplicate processing
+processed_messages = set()
+
 
 def extract_mentions(text):
     """Extract user IDs from @mentions in text"""
@@ -72,6 +75,13 @@ def handle_file_shared(event, client, say):
                 for f in msg['files']:
                     if f['id'] == file_id:
                         # Found the message with this file
+                        msg_ts = msg['ts']
+                        
+                        # Check if we've already processed this message
+                        if msg_ts in processed_messages:
+                            print(f"⏭️  Message {msg_ts} already processed, skipping")
+                            return
+                        
                         text = msg.get('text', '')
                         print(f"📝 Message text: {text}")
                         
@@ -83,6 +93,17 @@ def handle_file_shared(event, client, say):
                         if not mentioned_users:
                             print("❌ No valid mentions")
                             return
+                        
+                        # Count images in message
+                        image_count = sum(1 for file in msg.get('files', []) if file.get('mimetype', '').startswith('image/'))
+                        print(f"📷 Found {image_count} image(s) in message")
+                        
+                        if image_count == 0:
+                            print("❌ No images in message")
+                            return
+                        
+                        # Mark message as processed
+                        processed_messages.add(msg_ts)
                         
                         # Process all spots together
                         try:
