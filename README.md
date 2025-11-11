@@ -89,6 +89,8 @@ Create a `.env` file (or export these variables):
 export SLACK_BOT_TOKEN=xoxb-your-bot-token
 export SLACK_APP_TOKEN=xapp-your-app-level-token
 export SPOTTED_CHANNEL_ID=C1234567890
+export SUPABASE_URL=https://xxxxx.supabase.co
+export SUPABASE_KEY=your-supabase-key
 ```
 
 Or create a `.env` file:
@@ -96,7 +98,11 @@ Or create a `.env` file:
 SLACK_BOT_TOKEN=xoxb-your-bot-token
 SLACK_APP_TOKEN=xapp-your-app-level-token
 SPOTTED_CHANNEL_ID=C1234567890
+SUPABASE_URL=https://xxxxx.supabase.co
+SUPABASE_KEY=your-supabase-key
 ```
+
+> **Note:** Get your Supabase credentials from [supabase.com](https://supabase.com) → Your Project → Settings → API
 
 ### 8. Run the Bot
 
@@ -141,7 +147,17 @@ Score update: sarah +3 | Tagged users -3
 
 ## Database
 
-Scores are stored in `spotted.db` (SQLite). To reset all scores, delete this file or use the `reset_scores()` method in the Database class.
+Scores are stored in **Supabase** (PostgreSQL) for persistent cloud storage that survives redeployments.
+
+### Setup Supabase
+
+See **[SUPABASE_MIGRATION.md](SUPABASE_MIGRATION.md)** for detailed setup instructions.
+
+**Quick setup:**
+1. Create a free [Supabase](https://supabase.com) project
+2. Run `supabase_setup.sql` in the SQL Editor
+3. Add `SUPABASE_URL` and `SUPABASE_KEY` to your environment variables
+4. Done! Data now persists across deployments
 
 ## API for Webapp Integration
 
@@ -180,6 +196,8 @@ See `API_GUIDE.md` for full integration details.
    - `SLACK_BOT_TOKEN`
    - `SLACK_APP_TOKEN`
    - `SPOTTED_CHANNEL_ID`
+   - `SUPABASE_URL`
+   - `SUPABASE_KEY`
 6. Deploy! Railway auto-detects the `Procfile` and runs your bot
 
 **Free tier:** 500 hours/month (plenty for a small bot)
@@ -242,6 +260,8 @@ railway up
 railway variables set SLACK_BOT_TOKEN=xoxb-...
 railway variables set SLACK_APP_TOKEN=xapp-...
 railway variables set SPOTTED_CHANNEL_ID=C...
+railway variables set SUPABASE_URL=https://...
+railway variables set SUPABASE_KEY=eyJh...
 ```
 
 ## Troubleshooting
