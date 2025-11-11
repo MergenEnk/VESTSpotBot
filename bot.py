@@ -123,20 +123,24 @@ def handle_file_shared(event, client, say):
         print(f"Error handling file_shared: {e}")
 
 
-@app.event("message")
-def handle_message(event, say, client):
+# TEMPORARILY DISABLED FOR TESTING
+# @app.event("message")
+def handle_message_disabled(event, say, client):
     """Handle messages in the spotted channel"""
-    print(f"📩 Received message event: {event}")
     
     # Only process messages in the designated channel
     if event.get('channel') != SPOTTED_CHANNEL:
-        print(f"❌ Wrong channel: {event.get('channel')} != {SPOTTED_CHANNEL}")
         return
     
     # Ignore bot messages and message edits
     if event.get('subtype') in ['bot_message', 'message_changed']:
-        print(f"❌ Ignoring subtype: {event.get('subtype')}")
         return
+    
+    # ONLY process messages with images (let command handlers deal with text-only messages)
+    if not has_image(event):
+        return
+    
+    print(f"📩 Received message event with image: {event}")
     
     spotter_id = event.get('user')
     if not spotter_id:
@@ -144,12 +148,6 @@ def handle_message(event, say, client):
         return
     
     print(f"👤 Spotter: {spotter_id}")
-    
-    # Check if message has an image
-    if not has_image(event):
-        print(f"❌ No image found. Files: {event.get('files', 'None')}")
-        return
-    
     print("✅ Image detected")
     
     # Extract mentions
@@ -209,7 +207,9 @@ def handle_message(event, say, client):
 @app.message(re.compile(r"^!leaderboard", re.IGNORECASE))
 def show_leaderboard(message, say, client):
     """Show the leaderboard when someone types !leaderboard"""
+    print(f"🏆 !leaderboard command received from {message.get('user')}")
     if message.get('channel') != SPOTTED_CHANNEL:
+        print(f"❌ Wrong channel for !leaderboard: {message.get('channel')}")
         return
     
     scores = db.get_leaderboard()
@@ -232,7 +232,9 @@ def show_leaderboard(message, say, client):
 @app.message(re.compile(r"^!myscore", re.IGNORECASE))
 def show_my_score(message, say):
     """Show the user's current score"""
+    print(f"📊 !myscore command received from {message.get('user')}")
     if message.get('channel') != SPOTTED_CHANNEL:
+        print(f"❌ Wrong channel for !myscore: {message.get('channel')}")
         return
     
     user_id = message.get('user')
@@ -244,7 +246,9 @@ def show_my_score(message, say):
 @app.message(re.compile(r"^!adjust\s+<@([A-Z0-9]+)>\s+([-+]?\d+)", re.IGNORECASE))
 def adjust_score(message, say, client):
     """Admin command to manually adjust someone's score"""
+    print(f"⚖️ !adjust command received: {message.get('text')}")
     if message.get('channel') != SPOTTED_CHANNEL:
+        print(f"❌ Wrong channel for !adjust: {message.get('channel')}")
         return
     
     admin_user = message.get('user')
@@ -282,7 +286,9 @@ def adjust_score(message, say, client):
 @app.message(re.compile(r"^!help", re.IGNORECASE))
 def show_help(message, say):
     """Show help message"""
+    print(f"🆘 !help command received from {message.get('user')}")
     if message.get('channel') != SPOTTED_CHANNEL:
+        print(f"❌ Wrong channel for !help: {message.get('channel')}")
         return
     
     help_text = """
@@ -298,7 +304,6 @@ Post a photo and @mention people in the photo. You get +1 point per person tagge
 *Commands:*
 • `!leaderboard` - View the full leaderboard
 • `!myscore` - Check your current score
-• `!adjust @user +5` - Manually adjust someone's score (e.g., to fix mistakes)
 • `!help` - Show this help message
 
 *Rules:*
@@ -307,10 +312,6 @@ Post a photo and @mention people in the photo. You get +1 point per person tagge
 • Can't spot yourself
 • Each tagged person counts as a spot
 
-*To fix incorrect spots:*
-Use `!adjust` to add or remove points. Examples:
-• `!adjust @john +1` - Give John 1 point back
-• `!adjust @sarah -2` - Remove 2 points from Sarah
 """
     say(help_text)
 
