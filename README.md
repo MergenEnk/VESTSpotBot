@@ -137,30 +137,37 @@ See **[SUPABASE_MIGRATION.md](SUPABASE_MIGRATION.md)** for detailed setup instru
 3. Add `SUPABASE_URL` and `SUPABASE_KEY` to your environment variables
 4. Done! Data now persists across deployments
 
-## API for Webapp Integration
+## Webapp Integration (Hybrid Approach)
 
-Want to visualize the leaderboard in a separate webapp? The bot exposes REST API endpoints!
+Want to visualize the leaderboard? Your webapp fetches **directly from Supabase** (no API middleman needed)!
 
-**Run with API:**
-```bash
-python main.py  # Runs bot + API together
-```
-
-**Endpoints:**
-- `GET /api/leaderboard` - Full leaderboard
-- `GET /api/score/<user_id>` - Specific user's score
-- `GET /api/stats` - Overall statistics
+**Architecture:**
+- **Bot** → Writes to Supabase
+- **Webapp** → Reads from Supabase directly
+- **Flask API** → Health check only (for deployment platforms)
 
 **Example:** See `example_webapp.html` for a beautiful working demo!
 
-**In your webapp** (separate repo), just fetch:
+**In your webapp:**
 ```javascript
-fetch('https://your-bot.railway.app/api/leaderboard')
-  .then(res => res.json())
-  .then(data => console.log(data.leaderboard));
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Fetch leaderboard
+const { data } = await supabase
+  .from('scores')
+  .select('user_id, user_name, score')
+  .order('score', { ascending: false });
 ```
 
-See `API_GUIDE.md` for full integration details.
+**Benefits:**
+- ✅ Simpler (no API routes to maintain)
+- ✅ Real-time updates (Supabase subscriptions)
+- ✅ Better performance (direct DB access)
+- ✅ Secure (Row Level Security)
+
+See `API_GUIDE.md` for full integration details and security setup.
 
 ## Cloud Deployment (Run 24/7)
 

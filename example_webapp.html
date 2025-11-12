@@ -157,44 +157,51 @@
         </div>
     </div>
 
-    <script>
-        // CHANGE THIS TO YOUR DEPLOYED BOT URL
-        const API_URL = 'http://worker-production-3714.up.railway.app/api';
-        // When deployed: const API_URL = 'https://your-bot.railway.app/api';
+    <script type="module">
+        // ==========================================
+        // CONFIGURATION - UPDATE THESE VALUES
+        // ==========================================
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL';  // e.g., 'https://xxxxx.supabase.co'
+        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';  // Your anon/public key (safe to expose)
+        
+        // Import Supabase client from CDN
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+        
+        // Initialize Supabase client
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
         async function fetchLeaderboard() {
-            console.log('Fetching leaderboard from:', API_URL);
+            console.log('Fetching leaderboard from Supabase...');
             
             try {
-                const [statsRes, leaderboardRes] = await Promise.all([
-                    fetch(`${API_URL}/stats`),
-                    fetch(`${API_URL}/leaderboard`)
-                ]);
+                // Fetch leaderboard data directly from Supabase
+                const { data: leaderboard, error } = await supabase
+                    .from('scores')
+                    .select('user_id, user_name, score')
+                    .order('score', { ascending: false })
+                    .limit(100);
                 
-                console.log('Stats response:', statsRes.status);
-                console.log('Leaderboard response:', leaderboardRes.status);
-                
-                if (!statsRes.ok || !leaderboardRes.ok) {
-                    throw new Error(`API returned error: Stats ${statsRes.status}, Leaderboard ${leaderboardRes.status}`);
+                if (error) {
+                    throw error;
                 }
                 
-                const stats = await statsRes.json();
-                const data = await leaderboardRes.json();
+                console.log('Leaderboard data:', leaderboard);
                 
-                console.log('Stats data:', stats);
-                console.log('Leaderboard data:', data);
+                // Calculate stats from leaderboard data
+                const totalPlayers = leaderboard.length;
+                const totalSpots = leaderboard.reduce((sum, item) => sum + Math.abs(item.score), 0) / 2;
                 
-                document.getElementById('totalPlayers').textContent = stats.total_players;
-                document.getElementById('totalSpots').textContent = stats.total_spots;
+                document.getElementById('totalPlayers').textContent = totalPlayers;
+                document.getElementById('totalSpots').textContent = Math.floor(totalSpots);
                 
                 const container = document.getElementById('leaderboardContent');
                 
-                if (data.leaderboard.length === 0) {
+                if (leaderboard.length === 0) {
                     container.innerHTML = '<p style="text-align: center; color: #999;">No spots yet! Post a photo with @mention to get started.</p>';
                     return;
                 }
                 
-                container.innerHTML = data.leaderboard.map((item, index) => {
+                container.innerHTML = leaderboard.map((item, index) => {
                     const rank = index + 1;
                     const rankClass = rank === 1 ? 'top-1' : rank === 2 ? 'top-2' : rank === 3 ? 'top-3' : '';
                     const emoji = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '📌';
@@ -203,7 +210,7 @@
                     return `
                         <div class="leaderboard-item">
                             <div class="rank ${rankClass}">${emoji}</div>
-                            <div class="user-info">${item.user_name}</div>
+                            <div class="user-info">${item.user_name || item.user_id}</div>
                             <div class="score ${scoreClass}">${item.score > 0 ? '+' : ''}${item.score}</div>
                         </div>
                     `;
@@ -213,12 +220,22 @@
                 console.error('Error fetching leaderboard:', error);
                 document.getElementById('leaderboardContent').innerHTML = 
                     `<div style="text-align: center; padding: 20px;">
-                        <p style="color: #ef4444; margin-bottom: 10px;">❌ Cannot connect to API</p>
-                        <p style="color: #666; font-size: 0.9em;">Make sure you're running: <code style="background: #f0f0f0; padding: 2px 6px; border-radius: 3px;">python main.py</code></p>
+                        <p style="color: #ef4444; margin-bottom: 10px;">❌ Cannot connect to Supabase</p>
+                        <p style="color: #666; font-size: 0.9em;">Check your SUPABASE_URL and SUPABASE_ANON_KEY</p>
+                        <p style="color: #666; font-size: 0.9em; margin-top: 5px;">Error: ${error.message}</p>
                         <p style="color: #666; font-size: 0.9em; margin-top: 5px;">Check console for details (F12)</p>
                     </div>`;
             }
         }
+        
+        // Optional: Real-time updates (uncomment to enable)
+        // supabase
+        //     .channel('scores-channel')
+        //     .on('postgres_changes', { event: '*', schema: 'public', table: 'scores' }, () => {
+        //         console.log('Scores updated, refreshing...');
+        //         fetchLeaderboard();
+        //     })
+        //     .subscribe();
         
         fetchLeaderboard();
         setInterval(fetchLeaderboard, 30000); // Refresh every 30s

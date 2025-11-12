@@ -166,7 +166,7 @@ def test_imports():
     return all_good
 
 def test_api():
-    """Test that API can start"""
+    """Test that API can start (minimal health check only)"""
     print("\n" + "="*50)
     print("Testing API Configuration")
     print("="*50)
@@ -175,18 +175,14 @@ def test_api():
         from api import app
         print_status("success", "API app loaded successfully")
         
-        # Test routes are registered
+        # Test health check route is registered
         routes = [rule.rule for rule in app.url_map.iter_rules()]
-        expected_routes = ['/', '/api/leaderboard', '/api/score/<user_id>', '/api/stats']
-        
-        for route in expected_routes:
-            # Handle Flask's <> syntax
-            route_pattern = route.replace('<', '').replace('>', '').split('user_id')[0] if '<' in route else route
-            matching = [r for r in routes if route_pattern in r.replace('<', '').replace('>', '')]
-            if matching:
-                print_status("success", f"Route registered: {route}")
-            else:
-                print_status("error", f"Route missing: {route}")
+        if '/' in routes:
+            print_status("success", "Health check route registered: /")
+            print_status("info", "Webapp fetches data directly from Supabase (no API routes needed)")
+        else:
+            print_status("error", "Health check route missing: /")
+            return False
         
         return True
     except Exception as e:
