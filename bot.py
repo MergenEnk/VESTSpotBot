@@ -87,6 +87,15 @@ def handle_file_shared(event):
     pass
 
 
+# Catch-all for debugging - log ALL events we receive
+@app.event({"type": ".*"})
+def log_all_events(event, logger):
+    """Log all events for debugging purposes"""
+    event_type = event.get("type", "unknown")
+    event_subtype = event.get("subtype", "none")
+    print(f"📥 Event received: type={event_type}, subtype={event_subtype}, channel={event.get('channel', 'N/A')}")
+
+
 @app.event("message")
 def handle_message(event, say, client):
     """Handle messages in the spotted channel with comprehensive validation"""
@@ -322,7 +331,19 @@ if __name__ == "__main__":
     print(f"📺 Monitoring channel: {SPOTTED_CHANNEL}")
     print(f"🔑 Bot token: {'✅ Set' if os.environ.get('SLACK_BOT_TOKEN') else '❌ Missing'}")
     print(f"🔑 App token: {'✅ Set' if os.environ.get('SLACK_APP_TOKEN') else '❌ Missing'}")
-    handler = SocketModeHandler(app, os.environ.get("SLACK_APP_TOKEN"))
+    
+    # Create handler with trace enabled for debugging
+    handler = SocketModeHandler(
+        app=app,
+        app_token=os.environ.get("SLACK_APP_TOKEN"),
+        trace_enabled=True
+    )
+    
+    # Force fresh connection
+    if hasattr(handler, 'client'):
+        handler.client.wss_uri = None
+    
     print("⚡️ Spotted Bot is running!")
+    print("🔌 WebSocket connection active - waiting for events...")
     handler.start()
 

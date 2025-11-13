@@ -39,8 +39,19 @@ def run_bot_with_restart():
             print(f"🔑 Bot token: {'✅ Set' if os.environ.get('SLACK_BOT_TOKEN') else '❌ Missing'}")
             print(f"🔑 App token: {'✅ Set' if os.environ.get('SLACK_APP_TOKEN') else '❌ Missing'}")
             
-            handler = SocketModeHandler(bot.app, os.environ.get("SLACK_APP_TOKEN"))
-            print("⚡️ Spotted Bot is running!")
+            # Create handler with better connection settings
+            handler = SocketModeHandler(
+                app=bot.app,
+                app_token=os.environ.get("SLACK_APP_TOKEN"),
+                trace_enabled=True  # Enable connection tracing
+            )
+            
+            # Force fresh WebSocket connection (don't reuse stale connections)
+            if hasattr(handler, 'client'):
+                handler.client.wss_uri = None
+            
+            print("⚡️ Spotted Bot is running in Socket Mode!")
+            print("🔌 WebSocket connection established")
             handler.start()
             
             # If we reach here, handler.start() was interrupted
