@@ -26,11 +26,13 @@ Go to **OAuth & Permissions** and add these Bot Token Scopes:
 - `channels:history` - Read messages in channels
 - `channels:read` - View basic channel info
 - `chat:write` - Send messages
-- `files:read` - View files shared in channels
+- `files:read` - View files shared in channels (required for file_shared events)
 - `reactions:write` - Add emoji reactions
 - `users:read` - View people in the workspace
 
 Install the app to your workspace and copy the **Bot User OAuth Token** (starts with `xoxb-`)
+
+> **Important:** After adding scopes, you must reinstall the app for permissions to take effect!
 
 ### 3. Enable Socket Mode
 
@@ -45,7 +47,10 @@ Install the app to your workspace and copy the **Bot User OAuth Token** (starts 
 2. Enable Events
 3. Under **Subscribe to bot events**, add:
    - `message.channels`
+   - `file_shared`
 4. Save changes
+
+> **Note:** Both events are needed. The bot ignores `file_shared` but subscribing to it prevents warnings.
 
 ### 5. Get Your Channel ID
 
@@ -252,9 +257,10 @@ railway variables set SUPABASE_KEY=eyJh...
 ## Troubleshooting
 
 - **Bot not responding?** Make sure it's invited to the channel and Socket Mode is enabled
-- **Missing permissions?** Double-check all OAuth scopes are added (including `groups:history`) and reinstall the app
+- **Missing permissions?** Double-check all OAuth scopes are added and reinstall the app
 - **Wrong channel?** Verify the `SPOTTED_CHANNEL_ID` matches your target channel
-- **No debug output?** Check that `file.shared` event is subscribed in Event Subscriptions
+- **Some spots missed?** Bot waits 2 seconds and retries if files aren't immediately attached
+- **"No files detected" in logs?** Normal - the bot will retry after 2 seconds to fetch files
 
 ## Rules
 
