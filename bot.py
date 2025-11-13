@@ -77,21 +77,49 @@ def get_user_name(user_id, token):
     return None
 
 
+@app.event("file_shared")
+def handle_file_shared(event):
+    """
+    Acknowledge file_shared events to prevent warnings.
+    The message event contains all needed info, so we don't process here.
+    """
+    print(f"📁 file_shared event received: file_id={event.get('file_id')}, user={event.get('user_id')}")
+    pass
+
+
 @app.event("message")
 def handle_message(event, say, client):
     """Handle messages in the spotted channel with comprehensive validation"""
+    
+    # Log EVERY message event we receive for debugging
+    print(f"\n{'='*60}")
+    print(f"🔔 MESSAGE EVENT RECEIVED")
+    print(f"{'='*60}")
     
     # Validate event structure
     if not isinstance(event, dict):
         print("❌ Invalid event structure")
         return
     
+    print(f"Channel: {event.get('channel')} (Target: {SPOTTED_CHANNEL})")
+    print(f"User: {event.get('user')}")
+    print(f"Timestamp: {event.get('ts')}")
+    print(f"Subtype: {event.get('subtype', 'None')}")
+    print(f"Text: {event.get('text', '')[:100]}")
+    print(f"Has 'files' key: {'files' in event}")
+    if 'files' in event:
+        print(f"Number of files: {len(event.get('files', []))}")
+        for i, f in enumerate(event.get('files', [])):
+            print(f"  File {i+1}: {f.get('mimetype', 'unknown')} - {f.get('name', 'unnamed')}")
+    
     # Only process messages in the designated channel
     if event.get('channel') != SPOTTED_CHANNEL:
+        print("⏭️  Wrong channel, ignoring")
         return
     
     # Ignore bot messages and message edits
     if event.get('subtype') in ['bot_message', 'message_changed', 'message_deleted']:
+        print(f"⏭️  Ignoring subtype: {event.get('subtype')}")
         return
     
     # Thread-safe deduplication check
@@ -99,18 +127,65 @@ def handle_message(event, say, client):
     if not msg_ts:
         print("❌ No timestamp in message")
         return
-        
+    
     with processed_lock:
         if msg_ts in processed_messages:
             print(f"⏭️  Message {msg_ts} already processed, skipping")
             return
         processed_messages.append(msg_ts)
     
-    # ONLY process messages with images (let command handlers deal with text-only messages)
-    if not has_image(event):
+    print(f"✅ Passed all initial checks, proceeding to file check...")
+    
+    # Check if message has images
+    has_files = has_image(event)
+    print(f"Initial file check: {has_files}")
+    
+    # If no files immediately, wait briefly for them to attach (timing issue)
+    if not has_files:
+        print(f"⏳ No files detected immediately, waiting 2 seconds and retrying...")
+        time.sleep(2.0)
+        
+        try:
+            # Re-fetch the message to get updated file attachments
+            print(f"🔄 Fetching message history to check for files...")
+            result = client.conversations_history(
+                channel=event['channel'],
+                latest=msg_ts,
+                limit=1,
+                inclusive=True
+            )
+            
+            if result.get('messages') and len(result['messages']) > 0:
+                event = result['messages'][0]  # Use updated event
+                print(f"📥 Refetched message, checking for files...")
+                print(f"  Has 'files' key: {'files' in event}")
+                if 'files' in event:
+                    print(f"  Number of files: {len(event.get('files', []))}")
+                    for i, f in enumerate(event.get('files', [])):
+                        print(f"    File {i+1}: {f.get('mimetype', 'unknown')}")
+                
+                has_files = has_image(event)
+                if has_files:
+                    print(f"✅ Files detected after retry!")
+                else:
+                    print(f"❌ Still no files after retry - this is a text-only message")
+            else:
+                print(f"❌ Could not refetch message")
+        except Exception as e:
+            print(f"⚠️  Could not retry fetch: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print(f"✅ Files detected immediately")
+    
+    # ONLY process messages with images
+    if not has_files:
+        print(f"⏭️  No images found, skipping message")
         return
     
-    print(f"📩 Received message event with image at {msg_ts}")
+    print(f"\n{'='*60}")
+    print(f"📩 PROCESSING SPOT")
+    print(f"{'='*60}")
     
     spotter_id = event.get('user')
     if not spotter_id or not isinstance(spotter_id, str):
