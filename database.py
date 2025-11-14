@@ -1,104 +1,77 @@
 import os
-import time
-from typing import List, Tuple, Optional
 from supabase import create_client, Client
 
 
 class Database:
     def __init__(self):
-        """Initialize Supabase client with validation"""
+        """Initialize Supabase client"""
         supabase_url = os.environ.get("SUPABASE_URL")
         supabase_key = os.environ.get("SUPABASE_KEY")
         
         if not supabase_url or not supabase_key:
-            raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
+            raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
         
-        try:
-            self.client: Client = create_client(supabase_url, supabase_key)
-            print(f"✅ Connected to Supabase: {supabase_url}")
-        except Exception as e:
-            print(f"❌ Failed to connect to Supabase: {e}")
-            raise
+        self.client: Client = create_client(supabase_url, supabase_key)
+        self.table_name = "leaderboard"
     
-    def _retry_operation(self, operation, max_retries=3, operation_name="operation"):
-        """Retry a database operation with exponential backoff"""
-        for attempt in range(max_retries):
-            try:
-                return operation()
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    wait_time = 0.5 * (2 ** attempt)  # Exponential backoff
-                    print(f"⚠️  {operation_name} failed (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}")
-                    time.sleep(wait_time)
-                else:
-                    print(f"❌ {operation_name} failed after {max_retries} attempts: {e}")
-                    raise
-    
-    def get_score(self, user_id: str) -> int:
-        """Get the score for a specific user with retry logic"""
+    def get_user_points(self, user_id: str) -> int:
+        """Get current points for a user"""
         try:
-            def fetch():
-                result = self.client.table('scores').select('score').eq('user_id', user_id).execute()
-                if result.data and len(result.data) > 0:
-                    return result.data[0]['score']
-                return 0
+            result = self.client.table(self.table_name).select("points").eq("user_id", user_id).execute()
             
-            return self._retry_operation(fetch, operation_name=f"get_score({user_id})")
+            if result.data:
+                return result.data[0]["points"]
+            return 0
         except Exception as e:
-            print(f"❌ Error getting score for {user_id}: {e}")
+            print(f"Error getting points for {user_id}: {e}")
             return 0
     
-    def add_point(self, user_id: str, points: int, user_name: str = None):
-        """Add points to a user's score (can be negative) with retry logic and transaction safety"""
-        def update_score():
-            # First check if user exists
-            existing = self.client.table('scores').select('*').eq('user_id', user_id).execute()
-            
-            if existing.data and len(existing.data) > 0:
-                # User exists, update their score
-                current_score = existing.data[0]['score']
-                new_score = current_score + points
-                update_data = {'score': new_score}
-                if user_name:
-                    update_data['user_name'] = user_name
-                
-                self.client.table('scores').update(update_data).eq('user_id', user_id).execute()
-            else:
-                # User doesn't exist, insert new record
-                insert_data = {
-                    'user_id': user_id,
-                    'score': points,
-                    'user_name': user_name
-                }
-                self.client.table('scores').insert(insert_data).execute()
-        
+    def add_points(self, user_id: str, points: int, username: str = None):
+        """Add points to a user (creates user if doesn't exist)"""
         try:
-            self._retry_operation(update_score, operation_name=f"add_point({user_id}, {points})")
+            current_points = self.get_user_points(user_id)
+            new_points = current_points + points
+            
+            # Upsert: insert or update
+            data = {
+                "user_id": user_id,
+                "points": new_points
+            }
+            if username:
+                data["username"] = username
+            
+            self.client.table(self.table_name).upsert(data).execute()
+            
+            print(f"Added {points} points to {username or user_id}. New total: {new_points}")
         except Exception as e:
-            print(f"❌ Failed to add points for {user_id} after retries: {e}")
-            # Don't raise - let caller handle gracefully
-            raise
+            print(f"Error adding points to {user_id}: {e}")
     
-    def get_leaderboard(self, limit: int = 10) -> List[Tuple[str, Optional[str], int]]:
-        """Get the top scores, ordered by score descending. Returns (user_id, user_name, score) with retry logic"""
+    def subtract_points(self, user_id: str, points: int, username: str = None):
+        """Subtract points from a user (creates user if doesn't exist)"""
         try:
-            def fetch():
-                result = self.client.table('scores').select('user_id, user_name, score').order('score', desc=True).limit(limit).execute()
-                return [(row['user_id'], row['user_name'], row['score']) for row in result.data]
+            current_points = self.get_user_points(user_id)
+            new_points = current_points - points
             
-            return self._retry_operation(fetch, operation_name=f"get_leaderboard(limit={limit})")
+            # Upsert: insert or update
+            data = {
+                "user_id": user_id,
+                "points": new_points
+            }
+            if username:
+                data["username"] = username
+            
+            self.client.table(self.table_name).upsert(data).execute()
+            
+            print(f"Subtracted {points} points from {username or user_id}. New total: {new_points}")
         except Exception as e:
-            print(f"❌ Error getting leaderboard after retries: {e}")
+            print(f"Error subtracting points from {user_id}: {e}")
+    
+    def get_leaderboard(self, limit: int = 10):
+        """Get top users by points"""
+        try:
+            result = self.client.table(self.table_name).select("*").order("points", desc=True).limit(limit).execute()
+            return result.data
+        except Exception as e:
+            print(f"Error getting leaderboard: {e}")
             return []
-    
-    def reset_scores(self):
-        """Reset all scores to zero (use with caution!) with retry logic"""
-        def reset():
-            self.client.table('scores').delete().neq('user_id', '').execute()
-        
-        try:
-            self._retry_operation(reset, operation_name="reset_scores")
-        except Exception as e:
-            print(f"❌ Failed to reset scores after retries: {e}")
-            raise
 

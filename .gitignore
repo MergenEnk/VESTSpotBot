@@ -1,27 +1,12 @@
-# Environment variables
-.env
-
-# Database
-spotted.db
-*.db
-
-# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-venv/
+.env
+.venv
 env/
-ENV/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
+venv/
 .DS_Store
+*.log
 
