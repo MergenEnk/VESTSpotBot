@@ -17,11 +17,24 @@ app = App(
     token=os.environ.get("SLACK_BOT_TOKEN"),
     signing_secret=os.environ.get("SLACK_SIGNING_SECRET")
 )
-db = Database()
 
 # Initialize Flask app for HTTP endpoints
 flask_app = Flask(__name__)
 handler = SlackRequestHandler(app)
+
+# Lazy-load database to prevent startup crashes
+_db = None
+
+def get_db():
+    """Get database instance (lazy initialization)"""
+    global _db
+    if _db is None:
+        try:
+            _db = Database()
+        except Exception as e:
+            print(f"⚠️ Database initialization failed: {e}")
+            print("⚠️ Bot will run but won't persist data")
+    return _db
 
 
 def classify_message(event):
@@ -140,13 +153,15 @@ def handle_message(event, say):
         sender_username = get_username(sender_id)
         
         # Update database
-        # Sender gets +1 point per person tagged
-        db.add_points(sender_id, num_tagged, sender_username)
-        
-        # Each tagged user loses 1 point
-        for tagged_user in tagged_users:
-            tagged_username = get_username(tagged_user)
-            db.subtract_points(tagged_user, 1, tagged_username)
+        db = get_db()
+        if db:
+            # Sender gets +1 point per person tagged
+            db.add_points(sender_id, num_tagged, sender_username)
+            
+            # Each tagged user loses 1 point
+            for tagged_user in tagged_users:
+                tagged_username = get_username(tagged_user)
+                db.subtract_points(tagged_user, 1, tagged_username)
         
         print(f"✅ Spot processed: {sender_username} ({sender_id}) tagged {num_tagged} users")
 
@@ -174,15 +189,23 @@ def handle_file_shared(event, say):
         sender_username = get_username(user_id)
         
         # Update database
-        # Sender gets +1 point per person tagged
-        db.add_points(user_id, num_tagged, sender_username)
-        
-        # Each tagged user loses 1 point
-        for tagged_user in tagged_users:
-            tagged_username = get_username(tagged_user)
-            db.subtract_points(tagged_user, 1, tagged_username)
+        db = get_db()
+        if db:
+            # Sender gets +1 point per person tagged
+            db.add_points(user_id, num_tagged, sender_username)
+            
+            # Each tagged user loses 1 point
+            for tagged_user in tagged_users:
+                tagged_username = get_username(tagged_user)
+                db.subtract_points(tagged_user, 1, tagged_username)
         
         print(f"✅ Spot processed (file_shared): {sender_username} ({user_id}) tagged {num_tagged} users")
+
+
+@flask_app.route("/", methods=["GET"])
+def home():
+    """Root endpoint"""
+    return {"status": "running", "service": "spotted-bot", "endpoints": ["/health", "/slack/events"]}, 200
 
 
 @flask_app.route("/slack/events", methods=["POST"])
@@ -194,12 +217,27 @@ def slack_events():
 @flask_app.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint for deployment platforms"""
-    return {"status": "healthy", "service": "spotted-bot"}, 200
+    status = {
+        "status": "healthy",
+        "service": "spotted-bot",
+        "slack_configured": bool(os.environ.get("SLACK_BOT_TOKEN") and os.environ.get("SLACK_SIGNING_SECRET")),
+        "supabase_configured": bool(os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_KEY"))
+    }
+    
+    # Test database connection
+    try:
+        db = get_db()
+        status["database_connected"] = db is not None
+    except Exception as e:
+        status["database_connected"] = False
+        status["database_error"] = str(e)
+    
+    return status, 200
 
 
 def start():
     """Start the Flask web server"""
-    port = int(os.environ.get("PORT", 3002))
+    port = int(os.environ.get("PORT", 3000))
     print(f"⚡️ Spotted Bot is running on port {port}!")
     flask_app.run(host="0.0.0.0", port=port)
 
