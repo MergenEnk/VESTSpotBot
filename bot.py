@@ -144,22 +144,37 @@ def is_spot_from_file_shared(file_id, channel_id, user_id):
         mimetype = file_data.get("mimetype", "")
         print(f"   File mimetype: {mimetype}")
         
+        all_mentions = []
+        
+        # Check the initial comment/caption that came with the file upload
+        initial_comment = file_data.get("initial_comment", {})
+        if initial_comment:
+            comment_text = initial_comment.get("comment", "")
+            print(f"   File caption/comment: {comment_text}")
+            mentions = extract_mentions(comment_text)
+            if mentions:
+                print(f"   ✅ Found mentions in file caption: {mentions}")
+                all_mentions.extend(mentions)
+        
         # Get the message with the file to check for mentions
         shares = file_data.get("shares", {})
-        print(f"   Shares data: {shares}")
+        print(f"   Shares data available: public={bool(shares.get('public'))}, private={bool(shares.get('private'))}")
         
-        # Check public channels
-        public_shares = shares.get("public", {})
-        if channel_id in public_shares:
-            share_info = public_shares[channel_id][0]
-            ts = share_info.get("ts")
-            print(f"   Message timestamp: {ts}")
-            
+        # Check both public and private channels
+        ts = None
+        for share_type in ["public", "private"]:
+            type_shares = shares.get(share_type, {})
+            if channel_id in type_shares:
+                share_info = type_shares[channel_id][0]
+                ts = share_info.get("ts")
+                print(f"   Found in {share_type} channel, timestamp: {ts}")
+                break
+        
+        if ts:
             # Check current message and adjacent messages
             adjacent_msgs = get_adjacent_messages(channel_id, ts, limit=3)
             print(f"   Checking {len(adjacent_msgs)} messages (current + adjacent)")
             
-            all_mentions = []
             for msg in adjacent_msgs:
                 text = msg.get("text", "")
                 mentions = extract_mentions(text)
@@ -184,8 +199,8 @@ def is_spot_from_file_shared(file_id, channel_id, user_id):
                 })
                 print(f"   📝 Stored file share for future matching")
         else:
-            print(f"   ❌ Channel {channel_id} not in public shares")
-            print(f"   Available channels: {list(public_shares.keys())}")
+            print(f"   ❌ Could not find timestamp in shares data")
+            print(f"   Shares structure: {shares}")
         
         return False, []
     except Exception as e:
@@ -207,9 +222,8 @@ def get_username(user_id):
         return None
 
 
-@app.event("message")
-def handle_message(event, say):
-    """Handle all messages in channels the bot is in"""
+def handle_message_event(event, say):
+    """Handle all messages in channels (public or private) the bot is in"""
     # Ignore bot messages and message changes
     if event.get("subtype") is not None:
         return
@@ -248,6 +262,20 @@ def handle_message(event, say):
                 # Remove the matched file share
                 recent_file_shares[channel_id].remove(file_share)
                 return
+
+
+@app.event("message")
+def handle_message(event, say):
+    """Handle messages in public channels"""
+    handle_message_event(event, say)
+
+
+# Note: Slack doesn't have a separate event type for private channel messages.
+# The "message" event covers both public channels and private channels the bot is in.
+# However, if you need to explicitly handle group messages, you can add:
+# @app.event("message.groups")
+# But typically the @app.event("message") handler will catch all message events
+# regardless of channel type when the bot has the appropriate scopes.
 
 
 def process_spot(sender_id, tagged_users):

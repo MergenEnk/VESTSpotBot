@@ -32,6 +32,8 @@ When a spot is detected:
    - Add these Bot Token Scopes:
      - `channels:history` (read messages in public channels)
      - `channels:read` (view basic channel info)
+     - `groups:history` (read messages in private channels)
+     - `groups:read` (view private channel info)
      - `files:read` (access file info)
      - `users:read` (view user names)
 4. **Get Signing Secret**:
@@ -91,8 +93,9 @@ python main.py  # or python bot.py
    - Enter Request URL: `https://your-railway-url.railway.app/slack/events`
    - Slack will verify the URL (should show ✓ Verified)
    - Subscribe to bot events:
-     - `message.channels` (for regular messages)
-     - `file_shared` (for file uploads)
+     - `message.channels` (for regular messages in public channels)
+     - `message.groups` (for regular messages in private channels)
+     - `file_shared` (for file uploads in any channel)
    - Click "Save Changes"
 3. **Reinstall the app** (required after adding event subscriptions):
    - Go to OAuth & Permissions
