@@ -1,7 +1,8 @@
 import os
 import re
 from slack_bolt import App
-from slack_bolt.adapter.socket_mode import SocketModeHandler
+from slack_bolt.adapter.flask import SlackRequestHandler
+from flask import Flask, request
 from database import Database
 
 # Load environment variables for local development
@@ -11,9 +12,25 @@ try:
 except ImportError:
     pass  # dotenv not required in production
 
-# Initialize Slack app with Bot Token
-app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
+# Initialize Slack app with Bot Token and Signing Secret
+app = App(
+    token=os.environ.get("SLACK_BOT_TOKEN"),
+    signing_secret=os.environ.get("SLACK_SIGNING_SECRET")
+)
 db = Database()
+
+# Initialize Flask app for HTTP endpoints
+flask_app = Flask(__name__)
+handler = SlackRequestHandler(app)
+
+
+def classify_message(event):
+    """Classify message as file or text"""
+    has_files = "files" in event and len(event["files"]) > 0
+    if has_files:
+        file_types = [f.get("mimetype", "unknown") for f in event["files"]]
+        return "file", file_types
+    return "text", []
 
 
 def is_spot(event):
@@ -35,6 +52,52 @@ def is_spot(event):
     user_mentions = re.findall(r"<@([A-Z0-9]+)>", text)
     
     return has_image and len(user_mentions) > 0, user_mentions
+
+
+def is_spot_from_file_shared(file_id, channel_id):
+    """
+    Check if a file_shared event is a spot:
+    - File must be an image
+    - Message must tag at least one user
+    """
+    try:
+        # Get file info
+        file_info = app.client.files_info(file=file_id)
+        file_data = file_info["file"]
+        
+        # Check if it's an image
+        has_image = file_data.get("mimetype", "").startswith("image/")
+        if not has_image:
+            return False, []
+        
+        # Get the message with the file to check for mentions
+        # The file shares array contains the channel and timestamp
+        shares = file_data.get("shares", {})
+        
+        # Check public channels
+        public_shares = shares.get("public", {})
+        if channel_id in public_shares:
+            # Get the most recent share in this channel
+            share_info = public_shares[channel_id][0]  # First share
+            ts = share_info.get("ts")
+            
+            # Fetch the actual message
+            result = app.client.conversations_history(
+                channel=channel_id,
+                latest=ts,
+                limit=1,
+                inclusive=True
+            )
+            
+            if result["messages"]:
+                text = result["messages"][0].get("text", "")
+                user_mentions = re.findall(r"<@([A-Z0-9]+)>", text)
+                return len(user_mentions) > 0, user_mentions
+        
+        return False, []
+    except Exception as e:
+        print(f"Error checking file_shared event: {e}")
+        return False, []
 
 
 def get_username(user_id):
@@ -60,6 +123,12 @@ def handle_message(event, say):
     if not sender_id:
         return
     
+    # Classify the message
+    msg_type, file_types = classify_message(event)
+    print(f"📩 Message classified as '{msg_type}' from {sender_id}")
+    if msg_type == "file":
+        print(f"   File types: {', '.join(file_types)}")
+    
     # Check if this is a spot
     is_valid_spot, tagged_users = is_spot(event)
     
@@ -79,14 +148,60 @@ def handle_message(event, say):
             tagged_username = get_username(tagged_user)
             db.subtract_points(tagged_user, 1, tagged_username)
         
-        print(f"Spot processed: {sender_username} ({sender_id}) tagged {num_tagged} users")
+        print(f"✅ Spot processed: {sender_username} ({sender_id}) tagged {num_tagged} users")
+
+
+@app.event("file_shared")
+def handle_file_shared(event, say):
+    """Handle file_shared events (alternative way Slack sends file messages)"""
+    file_id = event.get("file_id")
+    channel_id = event.get("channel_id")
+    user_id = event.get("user_id")
+    
+    if not file_id or not user_id:
+        return
+    
+    print(f"📎 File shared event detected from {user_id} in channel {channel_id}")
+    
+    # Check if this is a spot
+    is_valid_spot, tagged_users = is_spot_from_file_shared(file_id, channel_id)
+    
+    if is_valid_spot:
+        # Process the spot
+        num_tagged = len(tagged_users)
+        
+        # Get sender's username
+        sender_username = get_username(user_id)
+        
+        # Update database
+        # Sender gets +1 point per person tagged
+        db.add_points(user_id, num_tagged, sender_username)
+        
+        # Each tagged user loses 1 point
+        for tagged_user in tagged_users:
+            tagged_username = get_username(tagged_user)
+            db.subtract_points(tagged_user, 1, tagged_username)
+        
+        print(f"✅ Spot processed (file_shared): {sender_username} ({user_id}) tagged {num_tagged} users")
+
+
+@flask_app.route("/slack/events", methods=["POST"])
+def slack_events():
+    """Handle incoming Slack events via HTTP POST"""
+    return handler.handle(request)
+
+
+@flask_app.route("/health", methods=["GET"])
+def health_check():
+    """Health check endpoint for deployment platforms"""
+    return {"status": "healthy", "service": "spotted-bot"}, 200
 
 
 def start():
-    """Start the bot using Socket Mode"""
-    handler = SocketModeHandler(app, os.environ.get("SLACK_APP_TOKEN"))
-    print("⚡️ Spotted Bot is running!")
-    handler.start()
+    """Start the Flask web server"""
+    port = int(os.environ.get("PORT", 3002))
+    print(f"⚡️ Spotted Bot is running on port {port}!")
+    flask_app.run(host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
