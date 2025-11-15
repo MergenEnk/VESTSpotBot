@@ -45,6 +45,9 @@ import time
 recent_file_shares = defaultdict(list)  # channel_id -> list of {user_id, ts, file_id}
 MAX_TIME_WINDOW = 60  # seconds to look for adjacent messages
 
+processed_spot_timestamps = {}  # (channel_id, ts) -> time when processed
+SPOT_PROCESSING_TTL = 5  # seconds - keep track of processed timestamps to avoid duplicates
+
 
 def clean_old_file_shares():
     """Remove file shares older than MAX_TIME_WINDOW"""
@@ -56,6 +59,11 @@ def clean_old_file_shares():
         ]
         if not recent_file_shares[channel_id]:
             del recent_file_shares[channel_id]
+    
+    # Clean up old processed timestamps
+    for key in list(processed_spot_timestamps.keys()):
+        if current_time - processed_spot_timestamps[key] > SPOT_PROCESSING_TTL:
+            del processed_spot_timestamps[key]
 
 
 def get_adjacent_messages(channel_id, ts, limit=2):
@@ -328,6 +336,15 @@ def handle_file_shared(event, say):
             if channel_id in type_shares:
                 ts = type_shares[channel_id][0].get("ts")
                 break
+        
+        # Skip if we've already processed this timestamp (multiple files in same message)
+        timestamp_key = (channel_id, ts)
+        if timestamp_key in processed_spot_timestamps:
+            print(f"   ⏭️ Skipping - already processed spot for this timestamp")
+            return
+        
+        # Mark this timestamp as processed
+        processed_spot_timestamps[timestamp_key] = time.time()
         process_spot(user_id, tagged_users, channel_id, ts)
 
 
