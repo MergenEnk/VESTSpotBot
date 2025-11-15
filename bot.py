@@ -37,6 +37,22 @@ def get_db():
     return _db
 
 
+def get_allowed_channels():
+    """Get list of allowed channel IDs from environment variable"""
+    allowed = os.environ.get("ALLOWED_CHANNELS", "")
+    if not allowed:
+        return None  # None means all channels are allowed
+    return set(allowed.split(","))
+
+
+def is_channel_allowed(channel_id):
+    """Check if bot should process events in this channel"""
+    allowed = get_allowed_channels()
+    if allowed is None:
+        return True  # All channels allowed
+    return channel_id in allowed
+
+
 # Track recent file shares (channel_id -> {user_id, timestamp, file_id})
 # Used to match files with tags in adjacent messages
 from collections import defaultdict
@@ -232,12 +248,17 @@ def get_username(user_id):
 
 def handle_message_event(event, say):
     """Handle all messages in channels (public or private) the bot is in"""
+    channel_id = event.get("channel")
+    
+    # Check if channel is allowed
+    if not is_channel_allowed(channel_id):
+        return
+    
     # Ignore bot messages and message changes
     if event.get("subtype") is not None:
         return
     
     sender_id = event.get("user")
-    channel_id = event.get("channel")
     if not sender_id:
         return
     
@@ -315,8 +336,13 @@ def process_spot(sender_id, tagged_users, channel_id=None, ts=None):
 @app.event("file_shared")
 def handle_file_shared(event, say):
     """Handle file_shared events (alternative way Slack sends file messages)"""
-    file_id = event.get("file_id")
     channel_id = event.get("channel_id")
+    
+    # Check if channel is allowed
+    if not is_channel_allowed(channel_id):
+        return
+    
+    file_id = event.get("file_id")
     user_id = event.get("user_id")
     
     if not file_id or not user_id:
