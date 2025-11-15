@@ -246,7 +246,7 @@ def handle_message_event(event, say):
     is_valid_spot, tagged_users = is_spot(event, channel_id)
     
     if is_valid_spot:
-        process_spot(sender_id, tagged_users)
+        process_spot(sender_id, tagged_users, channel_id, event.get("ts"))
         return
     
     # If message has no file but has mentions, check for recent file shares
@@ -258,7 +258,7 @@ def handle_message_event(event, say):
             for file_share in recent_file_shares[channel_id]:
                 file_user = file_share["user_id"]
                 print(f"   🔗 Matching with file from {file_user}")
-                process_spot(file_user, mentions)
+                process_spot(file_user, mentions, channel_id, file_share.get("ts"))
                 # Remove the matched file share
                 recent_file_shares[channel_id].remove(file_share)
                 return
@@ -278,7 +278,7 @@ def handle_message(event, say):
 # regardless of channel type when the bot has the appropriate scopes.
 
 
-def process_spot(sender_id, tagged_users):
+def process_spot(sender_id, tagged_users, channel_id=None, ts=None):
     """Process a valid spot - update points in database"""
     num_tagged = len(tagged_users)
     sender_username = get_username(sender_id)
@@ -293,6 +293,13 @@ def process_spot(sender_id, tagged_users):
         for tagged_user in tagged_users:
             tagged_username = get_username(tagged_user)
             db.subtract_points(tagged_user, 1, tagged_username)
+    
+    # Add reaction to message
+    if channel_id and ts:
+        try:
+            app.client.reactions_add(channel=channel_id, timestamp=ts, emoji="eyes")
+        except Exception as e:
+            print(f"⚠️ Failed to add reaction: {e}")
     
     print(f"✅ Spot processed: {sender_username} ({sender_id}) tagged {num_tagged} users")
 
@@ -313,7 +320,15 @@ def handle_file_shared(event, say):
     is_valid_spot, tagged_users = is_spot_from_file_shared(file_id, channel_id, user_id)
     
     if is_valid_spot:
-        process_spot(user_id, tagged_users)
+        # Get the timestamp from file shares
+        shares = app.client.files_info(file=file_id)["file"].get("shares", {})
+        ts = None
+        for share_type in ["public", "private"]:
+            type_shares = shares.get(share_type, {})
+            if channel_id in type_shares:
+                ts = type_shares[channel_id][0].get("ts")
+                break
+        process_spot(user_id, tagged_users, channel_id, ts)
 
 
 @flask_app.route("/", methods=["GET"])
