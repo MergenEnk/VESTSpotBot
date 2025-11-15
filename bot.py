@@ -297,7 +297,7 @@ def process_spot(sender_id, tagged_users, channel_id=None, ts=None):
     # Add reaction to message
     if channel_id and ts:
         try:
-            app.client.reactions_add(channel=channel_id, timestamp=ts, emoji="eyes")
+            app.client.reactions_add(channel=channel_id, timestamp=ts, name="eyes")
         except Exception as e:
             print(f"⚠️ Failed to add reaction: {e}")
     
