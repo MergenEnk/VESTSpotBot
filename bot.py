@@ -18,6 +18,9 @@ app = App(
     signing_secret=os.environ.get("SLACK_SIGNING_SECRET")
 )
 
+# Allowed channels for spot detection (comma-separated channel IDs)
+ALLOWED_CHANNELS = set(filter(None, os.environ.get("ALLOWED_CHANNELS", "").split(",")))
+
 # Initialize Flask app for HTTP endpoints
 flask_app = Flask(__name__)
 handler = SlackRequestHandler(app)
@@ -241,6 +244,10 @@ def handle_message_event(event, say):
     if not sender_id:
         return
     
+    # Only process spots in allowed channels
+    if ALLOWED_CHANNELS and channel_id not in ALLOWED_CHANNELS:
+        return
+    
     # Clean old file shares periodically
     clean_old_file_shares()
     
@@ -320,6 +327,10 @@ def handle_file_shared(event, say):
     user_id = event.get("user_id")
     
     if not file_id or not user_id:
+        return
+    
+    # Only process spots in allowed channels
+    if ALLOWED_CHANNELS and channel_id not in ALLOWED_CHANNELS:
         return
     
     print(f"📎 File shared event detected from {user_id} in channel {channel_id}")
